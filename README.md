@@ -97,6 +97,15 @@ pinned release checksum.
 There is no system VPN interface, service or automatic startup. macOS, Windows,
 WSL and containers are not supported targets.
 
+## VS Code extension
+
+To route Claude Code in the VS Code extension through ProxyCode, open the
+Remote-SSH settings JSON file and add this line, using your home directory:
+
+```jsonc
+"claudeCode.claudeProcessWrapper": "/home/USER/.local/bin/proxycode"
+```
+
 ## Usage
 
 ```bash
