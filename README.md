@@ -1,44 +1,51 @@
 # ProxyCode
 
-Run a command through a WireGuard tunnel without changing your system's network
-settings. ProxyCode installs [WireProxy](https://github.com/windtf/wireproxy),
-manages named tunnel profiles, and gives commands such as Codex and Claude Code
-an authenticated local HTTP proxy.
+Route Codex, Claude Code or any other command through a WireGuard tunnel without
+changing your system's network settings. ProxyCode runs
+[WireProxy](https://github.com/windtf/wireproxy) as an authenticated local HTTP
+proxy and manages named tunnel profiles.
+
+```text
+proxycode claude
+  → start and check the default profile's tunnel if needed
+  → launch Claude Code with proxy variables set
+```
 
 ## Install
 
-You need a WireGuard configuration from your provider or your own server.
-Run the interactive installer as your normal user, without `sudo`:
+You need a WireGuard configuration. Run the interactive installer without `sudo`:
 
 ```bash
 curl -fL "https://github.com/lukatman/proxycode/releases/download/v0.1.0/install.sh" \
   -o install.sh && bash install.sh
-
-proxycode start
-proxycode codex
 ```
 
-If `proxycode` isn’t found, add this line to your shell configuration
-(`~/.bashrc` for Bash), then open a new terminal:
+Downloads are pinned and checksum-verified. If `proxycode` isn't found, add
+`export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` and open a new terminal.
 
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+<details>
+<summary><strong>Requirements</strong></summary>
 
-The installer asks for your configuration, profile name and preferences, then
-shows a review before installation. Choose a default profile to use with commands
-such as `proxycode codex`. You can start and check the tunnel during setup, or
-use `proxycode start` afterward.
+- Linux x86-64 or ARM64, Bash 4.4 or newer, readable `/proc`, and writable user/XDG
+  directories. CI runs on Ubuntu 24.04 for both architectures.
+- `curl` with HTTPS support and CA certificates, `flock` from util-linux, `tar`,
+  GNU coreutils, `awk`, `grep`, and `sed`. Missing commands are reported by the
+  installer; install them with your distribution's package manager.
+- Loopback networking, access to GitHub over HTTPS, and outbound connectivity to
+  your WireGuard endpoint and health-check URL.
 
-It downloads a fixed ProxyCode bundle and verifies its release
-checksum, then downloads WireProxy **1.1.3** and checks the SHA-256 pinned in the
-installer, then copies your configuration into private storage.
+There is no system VPN interface, service or automatic startup. macOS, Windows,
+WSL and containers are not supported targets.
 
-Keep `install.sh` for the maintenance examples below, or delete it after setup.
-The installer does not edit shell configuration.
+</details>
 
 <details>
 <summary><strong>Other installation options</strong></summary>
+
+The installer downloads a fixed ProxyCode bundle and verifies its release
+checksum, then downloads WireProxy **1.1.3** and checks the SHA-256 pinned in the
+installer. Keep `install.sh` for maintenance, or delete it after setup. The
+installer does not edit shell configuration.
 
 For flag-based setup, use the downloaded installer with your configuration path
 and a profile name:
@@ -82,20 +89,30 @@ bash install.sh --wg-config "$HOME/Downloads/tunnel.conf" --name work --default
 An optional `--wireproxy-bin /absolute/path/to/wireproxy` installs a binary you
 provide. It checks compatibility, but does not verify that binary against the
 pinned release checksum.
+
 </details>
 
-### Requirements
+## Usage
 
-- Linux x86-64 or ARM64, Bash 4.4 or newer, readable `/proc`, and writable user/XDG
-  directories. CI runs on Ubuntu 24.04 for both architectures.
-- `curl` with HTTPS support and CA certificates, `flock` from util-linux, `tar`,
-  GNU coreutils, `awk`, `grep`, and `sed`. Missing commands are reported by the
-  installer; install them with your distribution's package manager.
-- Loopback networking, access to GitHub over HTTPS, and outbound connectivity to
-  your WireGuard endpoint and health-check URL.
+```bash
+proxycode                         # Management menu
+proxycode claude                  # Run Claude Code through the default profile
+proxycode codex
+proxycode --profile work curl https://example.com
+proxycode start [NAME]            # Start a profile's tunnel
+proxycode stop
+proxycode switch NAME             # Stop the active tunnel and start another
+proxycode status                  # Local process state
+proxycode check                   # HTTPS check through the active tunnel
+proxycode profile import FILE --name NAME [--default]
+proxycode profile list
+proxycode profile default NAME
+proxycode profile remove NAME
+```
 
-There is no system VPN interface, service or automatic startup. macOS, Windows,
-WSL and containers are not supported targets.
+The default profile is used when you don't name one. Only one profile can be
+active at a time, and a wrapped command won't switch it silently. Exiting a
+wrapped command leaves the tunnel running until `proxycode stop`.
 
 ## VS Code extension
 
@@ -106,53 +123,18 @@ Remote-SSH settings JSON file and add this line, using your home directory:
 "claudeCode.claudeProcessWrapper": "/home/USER/.local/bin/proxycode"
 ```
 
-## Usage
+## Limitations
 
-```bash
-proxycode                    # Open the management menu
-proxycode profile list
-proxycode profile show work
-proxycode start work
-proxycode status             # Local process state; no network request
-proxycode check              # HTTPS request through the active tunnel
-proxycode codex
-proxycode claude
-proxycode --profile work curl https://example.com
-proxycode stop
-```
+- Only applications that honor `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` are
+  routed. This is not a kill switch.
+- Codex stdio MCP servers and Claude background agents may bypass the tunnel.
+- Shared background services, such as the Codex app-server daemon, keep the
+  environment they started with. Restart them under `proxycode`.
 
-The **default profile** is the one selected by `start` or a wrapped command when
-you omit a name. The **active profile** is the one currently running. Only one
-profile can be active at a time.
+Don't publish profile files, proxy variables or logs.
 
-```text
-proxycode codex
-  → select the default profile
-  → start and check its tunnel if it is not running
-  → launch Codex with local HTTP proxy variables
-```
-
-Exiting a wrapped command, pressing Ctrl-C, or disconnecting SSH leaves the
-tunnel running. Use `proxycode stop` to stop it. Process tracking persists across
-sessions. Reusing an active tunnel does not repeat the startup check; use
-`proxycode check` to check it again.
-If another profile is active, wrapping refuses to switch it silently.
-
-```bash
-proxycode profile import "$HOME/Downloads/travel.conf" --name travel
-proxycode profile default travel
-proxycode switch travel
-proxycode profile remove work
-```
-
-Changing the default does not switch the active tunnel. Switching can interrupt
-running commands. If the new tunnel fails its startup check, the old one is not
-automatically restarted. Replacement (`profile import ... --replace`), switching
-and removal ask for confirmation when needed; use `--yes` for automation.
-Replacing or removing the active profile stops its tunnel. Replacement does not
-restart it.
-
-### Settings and health checks
+<details>
+<summary><strong>Settings and health checks</strong></summary>
 
 The listener defaults to `127.0.0.1:25345`. Stop the tunnel before changing its port:
 
@@ -175,24 +157,10 @@ proxycode profile settings work --probe custom \
 Run `proxycode help` for the full command syntax and `bash install.sh --help` for
 installer options.
 
-### Coding-agent limitations
+</details>
 
-Wrapping sets uppercase and lowercase `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`
-and `NO_PROXY` for the command and its descendants. Localhost bypasses the proxy.
-The parent shell and other applications are unaffected.
-
-Applications must honor those variables. This is not a network kill switch or a
-guarantee that every subprocess uses the tunnel. In particular, Codex stdio MCP
-servers and Claude background agents are not covered by the foreground CLI
-contract. See the [retained upstream references](docs/research/README.md).
-
-A CLI that connects to an existing background service does not change that
-service's proxy environment. For example, closing a Codex terminal can leave its
-shared app-server daemon running. Restart the service under the same proxy
-environment when changing proxies; wrapping only the new terminal client is
-not enough.
-
-## Reinstall or remove
+<details>
+<summary><strong>Reinstall or remove</strong></summary>
 
 To repair an installation or install a newer version, stop the tunnel and rerun
 that version's installer. Profiles, credentials and settings are preserved:
@@ -215,7 +183,10 @@ Both operations stop the managed tunnel safely and ask for confirmation. Add
 `--yes` for unattended use. Neither deletes your original imported configuration.
 After uninstall, rerunning `--install-only` makes the preserved profiles usable.
 
-## Private files and troubleshooting
+</details>
+
+<details>
+<summary><strong>Files and troubleshooting</strong></summary>
 
 Default locations are below; `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and
 `XDG_STATE_HOME` override the corresponding roots.
@@ -243,5 +214,6 @@ a log at 10 MiB, keeping one `.old` copy; this is not a continuous size limit.
 | Process identity is ambiguous | Do not kill the recorded PID blindly. Verify which process owns the listener. Only after confirming no managed WireProxy remains, remove the `active` file at the path reported by `status` and retry. |
 | Missing or damaged installed files | Rerun the fixed-version installer after stopping the tunnel. |
 
-For contributor checks and the disposable release walkthrough, see
-[Verification](docs/verification.md).
+</details>
+
+See [Verification](docs/verification.md) for contributor checks.
